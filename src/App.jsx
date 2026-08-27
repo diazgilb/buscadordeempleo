@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useMemo } from "react";
 import {
   Search, MapPin, Phone, Briefcase, UserPlus, Building2, X,
-  Wrench, Hammer, ChevronDown, Clock, Users, Zap, CheckCircle2, Menu
+  Wrench, Hammer, ChevronDown, Clock, Users, Zap, CheckCircle2, Menu,
+  ShieldCheck, Eye, AlertTriangle
 } from "lucide-react";
 
 const CIUDADES = [
@@ -277,7 +278,14 @@ export default function App() {
             </div>
           </div>
 
-          <div style={{ display: "flex", gap: 22, marginTop: 26, flexWrap: "wrap" }}>
+          <div style={{ display: "flex", alignItems: "flex-start", gap: 8, marginTop: 16, maxWidth: 620 }}>
+            <AlertTriangle size={15} color="#F2A71B" style={{ flexShrink: 0, marginTop: 2 }} />
+            <p style={{ color: "#9AA39D", fontSize: 12.5, margin: 0, lineHeight: 1.5 }}>
+              Antes de contratar o aceptar un trabajo: verifica identidad, acuerda el pago claramente y, en un primer encuentro, prefiere un lugar público. La plataforma no garantiza a los usuarios.
+            </p>
+          </div>
+
+          <div style={{ display: "flex", gap: 22, marginTop: 22, flexWrap: "wrap" }}>
             <div>
               <div className="oswald" style={{ color: "#F2A71B", fontSize: 26, fontWeight: 700 }}>{perfiles.length}</div>
               <div style={{ color: "#9AA39D", fontSize: 12.5 }}>profesionales registrados</div>
@@ -458,6 +466,7 @@ function EmptyState({ icon, titulo, texto, accion, accionTexto }) {
 }
 
 function PerfilCard({ p }) {
+  const [revelado, setRevelado] = useState(false);
   const color = CATEGORIA_COLOR[p.categoria] || "#33495E";
   const iniciales = p.nombre.split(" ").slice(0, 2).map((w) => w[0]).join("").toUpperCase();
   return (
@@ -468,10 +477,19 @@ function PerfilCard({ p }) {
           <div style={{ width: 46, height: 46, borderRadius: "50%", background: color, color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 15, flexShrink: 0 }} className="oswald">
             {iniciales}
           </div>
-          <div style={{ minWidth: 0 }}>
+          <div style={{ minWidth: 0, flex: 1 }}>
             <div style={{ fontWeight: 700, fontSize: 15.5, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{p.nombre}</div>
             <div style={{ color, fontSize: 13, fontWeight: 600 }}>{p.oficio}</div>
           </div>
+          {p.verificado ? (
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: 10.5, fontWeight: 700, color: "#3F8F5F", background: "#E7F3EB", padding: "4px 8px", borderRadius: 20, whiteSpace: "nowrap" }}>
+              <ShieldCheck size={11} /> VERIFICADO
+            </span>
+          ) : (
+            <span style={{ display: "inline-flex", alignItems: "center", fontSize: 10.5, fontWeight: 700, color: "#8A928C", background: "#F1F2F0", padding: "4px 8px", borderRadius: 20, whiteSpace: "nowrap" }}>
+              NUEVO
+            </span>
+          )}
         </div>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 12 }}>
           <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12.5, color: "#5B655F", background: "#F1F2F0", padding: "4px 9px", borderRadius: 20 }}>
@@ -484,9 +502,15 @@ function PerfilCard({ p }) {
         {p.descripcion && <p style={{ fontSize: 13.5, color: "#3F4642", lineHeight: 1.45, margin: "0 0 14px" }}>{p.descripcion}</p>}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", borderTop: "1px dashed #E2E5E3", paddingTop: 12 }}>
           <span className="mono" style={{ fontSize: 11, color: "#8A928C" }}>{credencial(p.id)}</span>
-          <a href={waLink(p.telefono, `Hola ${p.nombre.split(" ")[0]}, vi tu perfil como ${p.oficio} en OficioVE y quisiera contactarte.`)} target="_blank" rel="noopener noreferrer" className="btn-amber" style={{ padding: "8px 14px", fontSize: 13, textDecoration: "none" }}>
-            <Phone size={14} /> WhatsApp
-          </a>
+          {revelado ? (
+            <a href={waLink(p.telefono, `Hola ${p.nombre.split(" ")[0]}, vi tu perfil como ${p.oficio} en OficioVE y quisiera contactarte.`)} target="_blank" rel="noopener noreferrer" className="btn-amber" style={{ padding: "8px 14px", fontSize: 13, textDecoration: "none" }}>
+              <Phone size={14} /> WhatsApp
+            </a>
+          ) : (
+            <button onClick={() => setRevelado(true)} className="btn-outline" style={{ padding: "8px 14px", fontSize: 13, display: "inline-flex", alignItems: "center", gap: 6 }}>
+              <Eye size={14} /> Ver contacto
+            </button>
+          )}
         </div>
       </div>
     </div>
@@ -494,6 +518,7 @@ function PerfilCard({ p }) {
 }
 
 function VacanteCard({ v }) {
+  const [revelado, setRevelado] = useState(false);
   const color = CATEGORIA_COLOR[v.categoria] || "#33495E";
   return (
     <div className="card-lift" style={{ background: "#fff", borderRadius: 14, border: "1px solid #E2E5E3", padding: 18, position: "relative" }}>
@@ -502,7 +527,18 @@ function VacanteCard({ v }) {
           <Zap size={11} /> URGENTE
         </span>
       )}
-      <div style={{ fontSize: 12.5, fontWeight: 700, color, textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 6 }}>{v.oficio}</div>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+        <div style={{ fontSize: 12.5, fontWeight: 700, color, textTransform: "uppercase", letterSpacing: "0.04em" }}>{v.oficio}</div>
+        {v.verificado ? (
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: 10.5, fontWeight: 700, color: "#3F8F5F", background: "#E7F3EB", padding: "3px 7px", borderRadius: 20 }}>
+            <ShieldCheck size={11} /> VERIFICADO
+          </span>
+        ) : (
+          <span style={{ display: "inline-flex", alignItems: "center", fontSize: 10.5, fontWeight: 700, color: "#8A928C", background: "#F1F2F0", padding: "3px 7px", borderRadius: 20 }}>
+            NUEVO
+          </span>
+        )}
+      </div>
       <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 10 }}>{v.empresa}</div>
       <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
         <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12.5, color: "#5B655F", background: "#F1F2F0", padding: "4px 9px", borderRadius: 20 }}>
@@ -510,9 +546,15 @@ function VacanteCard({ v }) {
         </span>
       </div>
       {v.descripcion && <p style={{ fontSize: 13.5, color: "#3F4642", lineHeight: 1.45, margin: "0 0 14px" }}>{v.descripcion}</p>}
-      <a href={waLink(v.telefono, `Hola, vi la vacante de ${v.oficio} en ${v.empresa} publicada en OficioVE. Me interesa postularme.`)} target="_blank" rel="noopener noreferrer" className="btn-steel" style={{ padding: "9px 14px", fontSize: 13, textDecoration: "none", width: "100%", justifyContent: "center" }}>
-        <Phone size={14} /> Postularme por WhatsApp
-      </a>
+      {revelado ? (
+        <a href={waLink(v.telefono, `Hola, vi la vacante de ${v.oficio} en ${v.empresa} publicada en OficioVE. Me interesa postularme.`)} target="_blank" rel="noopener noreferrer" className="btn-steel" style={{ padding: "9px 14px", fontSize: 13, textDecoration: "none", width: "100%", justifyContent: "center" }}>
+          <Phone size={14} /> Postularme por WhatsApp
+        </a>
+      ) : (
+        <button onClick={() => setRevelado(true)} className="btn-outline" style={{ padding: "9px 14px", fontSize: 13, width: "100%", justifyContent: "center" }}>
+          <Eye size={14} /> Ver contacto
+        </button>
+      )}
     </div>
   );
 }
@@ -540,6 +582,7 @@ function PerfilForm({ onClose, onSubmit }) {
   const [oficio, setOficio] = useState(OFICIOS[0].nombre);
   const [experiencia, setExperiencia] = useState("");
   const [descripcion, setDescripcion] = useState("");
+  const [aceptaTerminos, setAceptaTerminos] = useState(false);
   const [err, setErr] = useState("");
 
   function submit(e) {
@@ -548,10 +591,14 @@ function PerfilForm({ onClose, onSubmit }) {
       setErr("Completa nombre, WhatsApp y años de experiencia.");
       return;
     }
+    if (!aceptaTerminos) {
+      setErr("Debes aceptar el compromiso de información veraz para publicar.");
+      return;
+    }
     const categoria = OFICIOS.find((o) => o.nombre === oficio)?.categoria || "Industria";
     onSubmit({
       id: genId(), nombre: nombre.trim(), telefono: telefono.trim(), ciudad, oficio, categoria,
-      experiencia: Number(experiencia), descripcion: descripcion.trim(), fecha: Date.now(),
+      experiencia: Number(experiencia), descripcion: descripcion.trim(), fecha: Date.now(), verificado: false,
     });
   }
 
@@ -588,6 +635,10 @@ function PerfilForm({ onClose, onSubmit }) {
           <label style={labelStyle}>Breve descripción (opcional)</label>
           <textarea style={{ ...inputStyle, minHeight: 70, resize: "vertical" }} value={descripcion} onChange={(e) => setDescripcion(e.target.value)} placeholder="Certificaciones, tipo de proyectos, disponibilidad..." />
         </div>
+        <label style={{ display: "flex", alignItems: "flex-start", gap: 8, fontSize: 12.5, color: "#5B655F", cursor: "pointer", lineHeight: 1.4 }}>
+          <input type="checkbox" checked={aceptaTerminos} onChange={(e) => setAceptaTerminos(e.target.checked)} style={{ marginTop: 2 }} />
+          Confirmo que mis datos son reales y me comprometo a no publicar información falsa. Entiendo que la plataforma no verifica identidades por defecto.
+        </label>
         {err && <p style={{ color: "#C1432B", fontSize: 13, margin: 0 }}>{err}</p>}
         <button type="submit" className="btn-amber" style={{ justifyContent: "center", marginTop: 4 }}>Publicar mi perfil</button>
       </form>
@@ -602,6 +653,7 @@ function VacanteForm({ onClose, onSubmit }) {
   const [oficio, setOficio] = useState(OFICIOS[0].nombre);
   const [descripcion, setDescripcion] = useState("");
   const [urgente, setUrgente] = useState(false);
+  const [aceptaTerminos, setAceptaTerminos] = useState(false);
   const [err, setErr] = useState("");
 
   function submit(e) {
@@ -610,10 +662,14 @@ function VacanteForm({ onClose, onSubmit }) {
       setErr("Completa el nombre de contacto/empresa y el WhatsApp.");
       return;
     }
+    if (!aceptaTerminos) {
+      setErr("Debes aceptar el compromiso de información veraz para publicar.");
+      return;
+    }
     const categoria = OFICIOS.find((o) => o.nombre === oficio)?.categoria || "Industria";
     onSubmit({
       id: genId(), empresa: empresa.trim(), telefono: telefono.trim(), ciudad, oficio, categoria,
-      descripcion: descripcion.trim(), urgente, fecha: Date.now(),
+      descripcion: descripcion.trim(), urgente, fecha: Date.now(), verificado: false,
     });
   }
 
@@ -649,6 +705,10 @@ function VacanteForm({ onClose, onSubmit }) {
         <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 14, cursor: "pointer" }}>
           <input type="checkbox" checked={urgente} onChange={(e) => setUrgente(e.target.checked)} />
           Es una necesidad urgente
+        </label>
+        <label style={{ display: "flex", alignItems: "flex-start", gap: 8, fontSize: 12.5, color: "#5B655F", cursor: "pointer", lineHeight: 1.4 }}>
+          <input type="checkbox" checked={aceptaTerminos} onChange={(e) => setAceptaTerminos(e.target.checked)} style={{ marginTop: 2 }} />
+          Confirmo que esta oferta es real y me comprometo a no publicar información falsa. Entiendo que la plataforma no verifica identidades por defecto.
         </label>
         {err && <p style={{ color: "#C1432B", fontSize: 13, margin: 0 }}>{err}</p>}
         <button type="submit" className="btn-steel" style={{ justifyContent: "center", marginTop: 4 }}>Publicar vacante</button>
