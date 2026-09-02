@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from "react";
 import {
   Search, MapPin, Phone, Briefcase, UserPlus, Building2, X,
   Wrench, Hammer, ChevronDown, Clock, Users, Zap, CheckCircle2, Menu,
-  ShieldCheck, Eye, AlertTriangle
+  ShieldCheck, Eye, AlertTriangle, FileText, Sparkles
 } from "lucide-react";
 import { supabase } from "./supabaseClient";
 
@@ -57,6 +57,11 @@ function genId() {
 
 const DIAS_VENCIMIENTO = 30;
 const ADMIN_PASSWORD = "oficiove2026"; // cámbiala por una propia
+
+// --- Configuración de suscripción (aún no cobra nada, solo informativo) ---
+const PAGOS_ACTIVOS = false; // cámbialo a true cuando quieras empezar a cobrar de verdad
+const PRECIO_BUSCA_TRABAJO = 1; // USD — profesionales/obreros que ofrecen su servicio
+const PRECIO_OFRECE_TRABAJO = 5; // USD — empleadores que buscan personal
 
 function diasRestantes(fechaMs) {
   const vencePara = fechaMs + DIAS_VENCIMIENTO * 24 * 60 * 60 * 1000;
@@ -423,6 +428,8 @@ export default function App() {
         )}
       </main>
 
+      <SeccionPrecios />
+
       <footer style={{ background: "#1C2321", padding: "24px 20px", textAlign: "center" }}>
         <p style={{ color: "#8A928C", fontSize: 12.5, margin: "0 0 8px", maxWidth: 560, marginInline: "auto" }}>
           Los perfiles y vacantes que publiques aquí quedan visibles para cualquiera que use este enlace — no ingreses datos que no quieras compartir públicamente. Las publicaciones vencen automáticamente a los {DIAS_VENCIMIENTO} días.
@@ -571,6 +578,11 @@ function PerfilCard({ p }) {
           </span>
         </div>
         {p.descripcion && <p style={{ fontSize: 13.5, color: "#3F4642", lineHeight: 1.45, margin: "0 0 14px" }}>{p.descripcion}</p>}
+        {p.documento_url && (
+          <a href={p.documento_url} target="_blank" rel="noopener noreferrer" style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 12.5, color: "#33495E", fontWeight: 600, marginBottom: 12, textDecoration: "underline" }}>
+            <FileText size={13} /> Ver currículo / tarjeta
+          </a>
+        )}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", borderTop: "1px dashed #E2E5E3", paddingTop: 12 }}>
           <span className="mono" style={{ fontSize: 11, color: "#8A928C" }}>{credencial(p.id)}</span>
           {revelado ? (
@@ -654,9 +666,11 @@ function PerfilForm({ onClose, onSubmit }) {
   const [experiencia, setExperiencia] = useState("");
   const [descripcion, setDescripcion] = useState("");
   const [aceptaTerminos, setAceptaTerminos] = useState(false);
+  const [archivo, setArchivo] = useState(null);
+  const [subiendo, setSubiendo] = useState(false);
   const [err, setErr] = useState("");
 
-  function submit(e) {
+  async function submit(e) {
     e.preventDefault();
     if (!nombre.trim() || !telefono.trim() || !experiencia) {
       setErr("Completa nombre, WhatsApp y años de experiencia.");
@@ -667,9 +681,27 @@ function PerfilForm({ onClose, onSubmit }) {
       return;
     }
     const categoria = OFICIOS.find((o) => o.nombre === oficio)?.categoria || "Industria";
+    const id = genId();
+    let documento_url = null;
+
+    if (archivo) {
+      setSubiendo(true);
+      const extension = archivo.name.split(".").pop();
+      const ruta = `${id}.${extension}`;
+      const { error: errorSubida } = await supabase.storage.from("documentos").upload(ruta, archivo);
+      setSubiendo(false);
+      if (errorSubida) {
+        setErr("No se pudo subir el archivo. Puedes publicar sin él e intentar más tarde.");
+      } else {
+        const { data } = supabase.storage.from("documentos").getPublicUrl(ruta);
+        documento_url = data.publicUrl;
+      }
+    }
+
     onSubmit({
-      id: genId(), nombre: nombre.trim(), telefono: telefono.trim(), ciudad, oficio, categoria,
+      id, nombre: nombre.trim(), telefono: telefono.trim(), ciudad, oficio, categoria,
       experiencia: Number(experiencia), descripcion: descripcion.trim(), fecha: Date.now(), verificado: false,
+      documento_url,
     });
   }
 
@@ -706,12 +738,19 @@ function PerfilForm({ onClose, onSubmit }) {
           <label style={labelStyle}>Breve descripción (opcional)</label>
           <textarea style={{ ...inputStyle, minHeight: 70, resize: "vertical" }} value={descripcion} onChange={(e) => setDescripcion(e.target.value)} placeholder="Certificaciones, tipo de proyectos, disponibilidad..." />
         </div>
+        <div>
+          <label style={labelStyle}>Currículo o tarjeta de presentación (opcional)</label>
+          <input type="file" accept=".pdf,.jpg,.jpeg,.png" style={inputStyle} onChange={(e) => setArchivo(e.target.files[0] || null)} />
+          <p style={{ fontSize: 11.5, color: "#8A928C", margin: "4px 0 0" }}>PDF o imagen, máximo 5 MB.</p>
+        </div>
         <label style={{ display: "flex", alignItems: "flex-start", gap: 8, fontSize: 12.5, color: "#5B655F", cursor: "pointer", lineHeight: 1.4 }}>
           <input type="checkbox" checked={aceptaTerminos} onChange={(e) => setAceptaTerminos(e.target.checked)} style={{ marginTop: 2 }} />
           Confirmo que mis datos son reales y me comprometo a no publicar información falsa. Entiendo que la plataforma no verifica identidades por defecto.
         </label>
         {err && <p style={{ color: "#C1432B", fontSize: 13, margin: 0 }}>{err}</p>}
-        <button type="submit" className="btn-amber" style={{ justifyContent: "center", marginTop: 4 }}>Publicar mi perfil</button>
+        <button type="submit" disabled={subiendo} className="btn-amber" style={{ justifyContent: "center", marginTop: 4 }}>
+          {subiendo ? "Subiendo archivo..." : "Publicar mi perfil"}
+        </button>
       </form>
     </ModalShell>
   );
@@ -867,5 +906,36 @@ function AdminPanel({ perfiles, vacantes, onBorrarPerfil, onBorrarVacante, onCer
         {vacantes.length === 0 && <p style={{ fontSize: 13.5, color: "#8A928C" }}>No hay vacantes publicadas.</p>}
       </div>
     </div>
+  );
+}
+
+function SeccionPrecios() {
+  return (
+    <section style={{ background: "#F1F2F0", padding: "44px 20px" }}>
+      <div style={{ maxWidth: 900, margin: "0 auto", textAlign: "center" }}>
+        <div style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "#FFF4DE", border: "1px solid #F2A71B", borderRadius: 20, padding: "5px 14px", marginBottom: 14 }}>
+          <Sparkles size={13} color="#C97F0B" />
+          <span className="mono" style={{ fontSize: 11.5, color: "#C97F0B", fontWeight: 700 }}>
+            {PAGOS_ACTIVOS ? "PLANES ACTIVOS" : "PRÓXIMAMENTE — POR AHORA TODO ES GRATIS"}
+          </span>
+        </div>
+        <h2 className="oswald" style={{ fontSize: 24, fontWeight: 700, margin: "0 0 10px" }}>Precios de acceso a la búsqueda</h2>
+        <p style={{ color: "#5B655F", fontSize: 14, maxWidth: 560, margin: "0 auto 28px" }}>
+          Hoy puedes registrarte y buscar totalmente gratis. Cuando se active el cobro, esto es lo que costará acceder a la búsqueda:
+        </p>
+        <div style={{ display: "flex", gap: 20, justifyContent: "center", flexWrap: "wrap" }}>
+          <div style={{ background: "#fff", border: "1px solid #E2E5E3", borderRadius: 14, padding: 26, width: 240 }}>
+            <div className="oswald" style={{ fontSize: 34, fontWeight: 700, color: "#F2A71B" }}>${PRECIO_BUSCA_TRABAJO}</div>
+            <div style={{ fontSize: 13, color: "#5B655F", marginBottom: 12 }}>por acceso, profesionales y obreros</div>
+            <p style={{ fontSize: 12.5, color: "#3F4642", margin: 0 }}>Para quienes buscan trabajo: acceder a las vacantes publicadas.</p>
+          </div>
+          <div style={{ background: "#fff", border: "1px solid #E2E5E3", borderRadius: 14, padding: 26, width: 240 }}>
+            <div className="oswald" style={{ fontSize: 34, fontWeight: 700, color: "#33495E" }}>${PRECIO_OFRECE_TRABAJO}</div>
+            <div style={{ fontSize: 13, color: "#5B655F", marginBottom: 12 }}>por acceso, empleadores</div>
+            <p style={{ fontSize: 12.5, color: "#3F4642", margin: 0 }}>Para quienes ofrecen trabajo: acceder al directorio de profesionales.</p>
+          </div>
+        </div>
+      </div>
+    </section>
   );
 }
