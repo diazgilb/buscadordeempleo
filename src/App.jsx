@@ -55,6 +55,18 @@ function genId() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 }
 
+const DIAS_VENCIMIENTO = 30;
+const ADMIN_PASSWORD = "oficiove2026"; // cámbiala por una propia
+
+function diasRestantes(fechaMs) {
+  const vencePara = fechaMs + DIAS_VENCIMIENTO * 24 * 60 * 60 * 1000;
+  return Math.ceil((vencePara - Date.now()) / (24 * 60 * 60 * 1000));
+}
+
+function estaVencido(fechaMs) {
+  return diasRestantes(fechaMs) <= 0;
+}
+
 function credencial(id) {
   return "VE-" + id.slice(-6).toUpperCase();
 }
@@ -100,6 +112,9 @@ export default function App() {
   const [fOficio, setFOficio] = useState("Todos");
   const [fTexto, setFTexto] = useState("");
 
+  const [showAdminLogin, setShowAdminLogin] = useState(false);
+  const [adminAuthed, setAdminAuthed] = useState(false);
+
   useEffect(() => {
     (async () => {
       const { data: p, error: ep } = await supabase.from("perfiles").select("*").order("fecha", { ascending: false });
@@ -135,8 +150,29 @@ export default function App() {
     showToast("Vacante publicada.");
   }
 
+  async function borrarPerfil(id) {
+    const { error } = await supabase.from("perfiles").delete().eq("id", id);
+    if (error) {
+      showToast("No se pudo borrar. Intenta de nuevo.");
+      return;
+    }
+    setPerfiles((prev) => prev.filter((p) => p.id !== id));
+    showToast("Perfil borrado.");
+  }
+
+  async function borrarVacante(id) {
+    const { error } = await supabase.from("vacantes").delete().eq("id", id);
+    if (error) {
+      showToast("No se pudo borrar. Intenta de nuevo.");
+      return;
+    }
+    setVacantes((prev) => prev.filter((v) => v.id !== id));
+    showToast("Vacante borrada.");
+  }
+
   const perfilesFiltrados = useMemo(() => {
     return perfiles.filter((p) => {
+      if (estaVencido(p.fecha)) return false;
       if (fCiudad !== "Todas" && p.ciudad !== fCiudad) return false;
       if (fOficio !== "Todos" && p.oficio !== fOficio) return false;
       if (fTexto.trim()) {
@@ -149,6 +185,7 @@ export default function App() {
 
   const vacantesFiltradas = useMemo(() => {
     return vacantes.filter((v) => {
+      if (estaVencido(v.fecha)) return false;
       if (fCiudad !== "Todas" && v.ciudad !== fCiudad) return false;
       if (fOficio !== "Todos" && v.oficio !== fOficio) return false;
       if (fTexto.trim()) {
@@ -374,13 +411,35 @@ export default function App() {
             )}
           </>
         )}
+
+        {adminAuthed && (
+          <AdminPanel
+            perfiles={perfiles}
+            vacantes={vacantes}
+            onBorrarPerfil={borrarPerfil}
+            onBorrarVacante={borrarVacante}
+            onCerrar={() => setAdminAuthed(false)}
+          />
+        )}
       </main>
 
       <footer style={{ background: "#1C2321", padding: "24px 20px", textAlign: "center" }}>
-        <p style={{ color: "#8A928C", fontSize: 12.5, margin: 0, maxWidth: 560, marginInline: "auto" }}>
-          Los perfiles y vacantes que publiques aquí quedan visibles para cualquiera que use este enlace — no ingreses datos que no quieras compartir públicamente.
+        <p style={{ color: "#8A928C", fontSize: 12.5, margin: "0 0 8px", maxWidth: 560, marginInline: "auto" }}>
+          Los perfiles y vacantes que publiques aquí quedan visibles para cualquiera que use este enlace — no ingreses datos que no quieras compartir públicamente. Las publicaciones vencen automáticamente a los {DIAS_VENCIMIENTO} días.
         </p>
+        {!adminAuthed && (
+          <button onClick={() => setShowAdminLogin(true)} style={{ background: "none", border: "none", color: "#5B655F", fontSize: 11, cursor: "pointer", textDecoration: "underline" }}>
+            Admin
+          </button>
+        )}
       </footer>
+
+      {showAdminLogin && (
+        <AdminLogin
+          onClose={() => setShowAdminLogin(false)}
+          onSuccess={() => { setAdminAuthed(true); setShowAdminLogin(false); }}
+        />
+      )}
 
       {showPerfilForm && <PerfilForm onClose={() => setShowPerfilForm(false)} onSubmit={(p) => { addPerfil(p); setShowPerfilForm(false); }} />}
       {showVacanteForm && <VacanteForm onClose={() => setShowVacanteForm(false)} onSubmit={(v) => { addVacante(v); setShowVacanteForm(false); }} />}
@@ -726,5 +785,87 @@ function VacanteForm({ onClose, onSubmit }) {
         <button type="submit" className="btn-steel" style={{ justifyContent: "center", marginTop: 4 }}>Publicar vacante</button>
       </form>
     </ModalShell>
+  );
+}
+
+function AdminLogin({ onClose, onSuccess }) {
+  const [password, setPassword] = useState("");
+  const [err, setErr] = useState("");
+
+  function submit(e) {
+    e.preventDefault();
+    if (password === ADMIN_PASSWORD) {
+      onSuccess();
+    } else {
+      setErr("Contraseña incorrecta.");
+    }
+  }
+
+  return (
+    <ModalShell title="Acceso de administrador" onClose={onClose}>
+      <form onSubmit={submit} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <div>
+          <label style={labelStyle}>Contraseña</label>
+          <input type="password" style={inputStyle} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" autoFocus />
+        </div>
+        {err && <p style={{ color: "#C1432B", fontSize: 13, margin: 0 }}>{err}</p>}
+        <button type="submit" className="btn-steel" style={{ justifyContent: "center" }}>Entrar</button>
+      </form>
+    </ModalShell>
+  );
+}
+
+function AdminPanel({ perfiles, vacantes, onBorrarPerfil, onBorrarVacante, onCerrar }) {
+  return (
+    <div style={{ marginTop: 40, borderTop: "3px solid #1C2321", paddingTop: 24 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 18 }}>
+        <h2 className="oswald" style={{ fontSize: 22, fontWeight: 700, margin: 0 }}>Panel de administrador</h2>
+        <button onClick={onCerrar} className="btn-outline" style={{ padding: "6px 12px", fontSize: 13 }}>Cerrar panel</button>
+      </div>
+
+      <h3 style={{ fontSize: 15, fontWeight: 700, margin: "0 0 10px" }}>Perfiles ({perfiles.length})</h3>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 28 }}>
+        {perfiles.map((p) => {
+          const dias = diasRestantes(p.fecha);
+          const vencido = dias <= 0;
+          return (
+            <div key={p.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: "#fff", border: "1px solid #E2E5E3", borderRadius: 10, padding: "10px 14px" }}>
+              <div style={{ fontSize: 13.5 }}>
+                <strong>{p.nombre}</strong> — {p.oficio} — {p.ciudad}{" "}
+                <span style={{ color: vencido ? "#C1432B" : "#5B655F" }}>
+                  ({vencido ? "vencido" : `${dias} días restantes`})
+                </span>
+              </div>
+              <button onClick={() => { if (window.confirm(`¿Borrar el perfil de ${p.nombre}?`)) onBorrarPerfil(p.id); }} className="btn-outline" style={{ padding: "6px 12px", fontSize: 12.5, borderColor: "#C1432B", color: "#C1432B" }}>
+                Borrar
+              </button>
+            </div>
+          );
+        })}
+        {perfiles.length === 0 && <p style={{ fontSize: 13.5, color: "#8A928C" }}>No hay perfiles registrados.</p>}
+      </div>
+
+      <h3 style={{ fontSize: 15, fontWeight: 700, margin: "0 0 10px" }}>Vacantes ({vacantes.length})</h3>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {vacantes.map((v) => {
+          const dias = diasRestantes(v.fecha);
+          const vencido = dias <= 0;
+          return (
+            <div key={v.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: "#fff", border: "1px solid #E2E5E3", borderRadius: 10, padding: "10px 14px" }}>
+              <div style={{ fontSize: 13.5 }}>
+                <strong>{v.empresa}</strong> — {v.oficio} — {v.ciudad}{" "}
+                <span style={{ color: vencido ? "#C1432B" : "#5B655F" }}>
+                  ({vencido ? "vencido" : `${dias} días restantes`})
+                </span>
+              </div>
+              <button onClick={() => { if (window.confirm(`¿Borrar la vacante de ${v.empresa}?`)) onBorrarVacante(v.id); }} className="btn-outline" style={{ padding: "6px 12px", fontSize: 12.5, borderColor: "#C1432B", color: "#C1432B" }}>
+                Borrar
+              </button>
+            </div>
+          );
+        })}
+        {vacantes.length === 0 && <p style={{ fontSize: 13.5, color: "#8A928C" }}>No hay vacantes publicadas.</p>}
+      </div>
+    </div>
   );
 }
