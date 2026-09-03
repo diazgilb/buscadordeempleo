@@ -58,10 +58,7 @@ function genId() {
 const DIAS_VENCIMIENTO = 30;
 const ADMIN_PASSWORD = "oficiove2026"; // cámbiala por una propia
 
-// --- Configuración de suscripción (aún no cobra nada, solo informativo) ---
-const PAGOS_ACTIVOS = false; // cámbialo a true cuando quieras empezar a cobrar de verdad
-const PRECIO_BUSCA_TRABAJO = 1; // USD — profesionales/obreros que ofrecen su servicio
-const PRECIO_OFRECE_TRABAJO = 5; // USD — empleadores que buscan personal
+// Los valores de precios/WhatsApp ahora se cargan desde la tabla "configuracion" en Supabase (editables desde el panel Admin).
 
 function diasRestantes(fechaMs) {
   const vencePara = fechaMs + DIAS_VENCIMIENTO * 24 * 60 * 60 * 1000;
@@ -120,12 +117,35 @@ export default function App() {
   const [showAdminLogin, setShowAdminLogin] = useState(false);
   const [adminAuthed, setAdminAuthed] = useState(false);
 
+  const [config, setConfig] = useState({
+    pagos_activos: false,
+    precio_busca_trabajo: 1,
+    precio_ofrece_trabajo: 5,
+    whatsapp_contacto: "584128412750",
+  });
+
+  async function cargarConfig() {
+    const { data, error } = await supabase.from("configuracion").select("*").eq("id", 1).single();
+    if (!error && data) setConfig(data);
+  }
+
+  async function guardarConfig(nuevaConfig) {
+    const { error } = await supabase.from("configuracion").update(nuevaConfig).eq("id", 1);
+    if (!error) {
+      setConfig((prev) => ({ ...prev, ...nuevaConfig }));
+      showToast("Configuración guardada.");
+    } else {
+      showToast("No se pudo guardar la configuración.");
+    }
+  }
+
   useEffect(() => {
     (async () => {
       const { data: p, error: ep } = await supabase.from("perfiles").select("*").order("fecha", { ascending: false });
       if (!ep && p) setPerfiles(p);
       const { data: v, error: ev } = await supabase.from("vacantes").select("*").order("fecha", { ascending: false });
       if (!ev && v) setVacantes(v);
+      await cargarConfig();
       setLoading(false);
     })();
   }, []);
@@ -173,6 +193,26 @@ export default function App() {
     }
     setVacantes((prev) => prev.filter((v) => v.id !== id));
     showToast("Vacante borrada.");
+  }
+
+  async function editarPerfil(id, cambios) {
+    const { error } = await supabase.from("perfiles").update(cambios).eq("id", id);
+    if (error) {
+      showToast("No se pudo guardar el cambio.");
+      return;
+    }
+    setPerfiles((prev) => prev.map((p) => (p.id === id ? { ...p, ...cambios } : p)));
+    showToast("Perfil actualizado.");
+  }
+
+  async function editarVacante(id, cambios) {
+    const { error } = await supabase.from("vacantes").update(cambios).eq("id", id);
+    if (error) {
+      showToast("No se pudo guardar el cambio.");
+      return;
+    }
+    setVacantes((prev) => prev.map((v) => (v.id === id ? { ...v, ...cambios } : v)));
+    showToast("Vacante actualizada.");
   }
 
   const perfilesFiltrados = useMemo(() => {
@@ -423,12 +463,16 @@ export default function App() {
             vacantes={vacantes}
             onBorrarPerfil={borrarPerfil}
             onBorrarVacante={borrarVacante}
+            onEditarPerfil={editarPerfil}
+            onEditarVacante={editarVacante}
+            config={config}
+            onGuardarConfig={guardarConfig}
             onCerrar={() => setAdminAuthed(false)}
           />
         )}
       </main>
 
-      <SeccionPrecios />
+      <SeccionPrecios config={config} />
 
       <footer style={{ background: "#1C2321", padding: "24px 20px", textAlign: "center" }}>
         <p style={{ color: "#8A928C", fontSize: 12.5, margin: "0 0 8px", maxWidth: 560, marginInline: "auto" }}>
@@ -557,7 +601,7 @@ function PerfilCard({ p }) {
           </div>
           <div style={{ minWidth: 0, flex: 1 }}>
             <div style={{ fontWeight: 700, fontSize: 15.5, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{p.nombre}</div>
-            <div style={{ color, fontSize: 13, fontWeight: 600 }}>{p.oficio}</div>
+            <div style={{ color, fontSize: 17, fontWeight: 700 }}>{p.oficio}</div>
           </div>
           {p.verificado ? (
             <span style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: 10.5, fontWeight: 700, color: "#3F8F5F", background: "#E7F3EB", padding: "4px 8px", borderRadius: 20, whiteSpace: "nowrap" }}>
@@ -611,7 +655,7 @@ function VacanteCard({ v }) {
         </span>
       )}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
-        <div style={{ fontSize: 12.5, fontWeight: 700, color, textTransform: "uppercase", letterSpacing: "0.04em" }}>{v.oficio}</div>
+        <div style={{ fontSize: 16.5, fontWeight: 700, color, textTransform: "uppercase", letterSpacing: "0.02em" }}>{v.oficio}</div>
         {v.verificado ? (
           <span style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: 10.5, fontWeight: 700, color: "#3F8F5F", background: "#E7F3EB", padding: "3px 7px", borderRadius: 20 }}>
             <ShieldCheck size={11} /> VERIFICADO
@@ -854,7 +898,163 @@ function AdminLogin({ onClose, onSuccess }) {
   );
 }
 
-function AdminPanel({ perfiles, vacantes, onBorrarPerfil, onBorrarVacante, onCerrar }) {
+function FilaAdminPerfil({ p, onBorrar, onEditar }) {
+  const [editando, setEditando] = useState(false);
+  const [nombre, setNombre] = useState(p.nombre);
+  const [oficio, setOficio] = useState(p.oficio);
+  const [ciudad, setCiudad] = useState(p.ciudad);
+  const [telefono, setTelefono] = useState(p.telefono);
+  const [experiencia, setExperiencia] = useState(p.experiencia);
+  const [descripcion, setDescripcion] = useState(p.descripcion || "");
+  const dias = diasRestantes(p.fecha);
+  const vencido = dias <= 0;
+
+  function guardar() {
+    onEditar(p.id, { nombre, oficio, ciudad, telefono, experiencia: Number(experiencia), descripcion });
+    setEditando(false);
+  }
+
+  if (editando) {
+    return (
+      <div style={{ background: "#fff", border: "1.5px solid #33495E", borderRadius: 10, padding: 14, display: "flex", flexDirection: "column", gap: 8 }}>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <input style={{ ...inputStyle, flex: 1, minWidth: 140 }} value={nombre} onChange={(e) => setNombre(e.target.value)} placeholder="Nombre" />
+          <select style={{ ...inputStyle, flex: 1, minWidth: 140 }} value={oficio} onChange={(e) => setOficio(e.target.value)}>
+            {OFICIOS.map((o) => <option key={o.nombre}>{o.nombre}</option>)}
+          </select>
+        </div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <select style={{ ...inputStyle, flex: 1, minWidth: 140 }} value={ciudad} onChange={(e) => setCiudad(e.target.value)}>
+            {CIUDADES.map((c) => <option key={c}>{c}</option>)}
+          </select>
+          <input style={{ ...inputStyle, flex: 1, minWidth: 140 }} value={telefono} onChange={(e) => setTelefono(e.target.value)} placeholder="WhatsApp" />
+          <input type="number" style={{ ...inputStyle, width: 90 }} value={experiencia} onChange={(e) => setExperiencia(e.target.value)} placeholder="Años" />
+        </div>
+        <textarea style={{ ...inputStyle, minHeight: 50 }} value={descripcion} onChange={(e) => setDescripcion(e.target.value)} placeholder="Descripción" />
+        <div style={{ display: "flex", gap: 8 }}>
+          <button onClick={guardar} className="btn-amber" style={{ padding: "7px 14px", fontSize: 12.5 }}>Guardar</button>
+          <button onClick={() => setEditando(false)} className="btn-outline" style={{ padding: "7px 14px", fontSize: 12.5 }}>Cancelar</button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: "#fff", border: "1px solid #E2E5E3", borderRadius: 10, padding: "10px 14px", gap: 10, flexWrap: "wrap" }}>
+      <div style={{ fontSize: 13.5 }}>
+        <strong>{p.nombre}</strong> — {p.oficio} — {p.ciudad}{" "}
+        <span style={{ color: vencido ? "#C1432B" : "#5B655F" }}>
+          ({vencido ? "vencido" : `${dias} días restantes`})
+        </span>
+      </div>
+      <div style={{ display: "flex", gap: 8 }}>
+        <button onClick={() => setEditando(true)} className="btn-outline" style={{ padding: "6px 12px", fontSize: 12.5 }}>Editar</button>
+        <button onClick={() => { if (window.confirm(`¿Borrar el perfil de ${p.nombre}?`)) onBorrar(p.id); }} className="btn-outline" style={{ padding: "6px 12px", fontSize: 12.5, borderColor: "#C1432B", color: "#C1432B" }}>
+          Borrar
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function FilaAdminVacante({ v, onBorrar, onEditar }) {
+  const [editando, setEditando] = useState(false);
+  const [empresa, setEmpresa] = useState(v.empresa);
+  const [oficio, setOficio] = useState(v.oficio);
+  const [ciudad, setCiudad] = useState(v.ciudad);
+  const [telefono, setTelefono] = useState(v.telefono);
+  const [descripcion, setDescripcion] = useState(v.descripcion || "");
+  const dias = diasRestantes(v.fecha);
+  const vencido = dias <= 0;
+
+  function guardar() {
+    onEditar(v.id, { empresa, oficio, ciudad, telefono, descripcion });
+    setEditando(false);
+  }
+
+  if (editando) {
+    return (
+      <div style={{ background: "#fff", border: "1.5px solid #33495E", borderRadius: 10, padding: 14, display: "flex", flexDirection: "column", gap: 8 }}>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <input style={{ ...inputStyle, flex: 1, minWidth: 140 }} value={empresa} onChange={(e) => setEmpresa(e.target.value)} placeholder="Empresa" />
+          <select style={{ ...inputStyle, flex: 1, minWidth: 140 }} value={oficio} onChange={(e) => setOficio(e.target.value)}>
+            {OFICIOS.map((o) => <option key={o.nombre}>{o.nombre}</option>)}
+          </select>
+        </div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <select style={{ ...inputStyle, flex: 1, minWidth: 140 }} value={ciudad} onChange={(e) => setCiudad(e.target.value)}>
+            {CIUDADES.map((c) => <option key={c}>{c}</option>)}
+          </select>
+          <input style={{ ...inputStyle, flex: 1, minWidth: 140 }} value={telefono} onChange={(e) => setTelefono(e.target.value)} placeholder="WhatsApp" />
+        </div>
+        <textarea style={{ ...inputStyle, minHeight: 50 }} value={descripcion} onChange={(e) => setDescripcion(e.target.value)} placeholder="Descripción" />
+        <div style={{ display: "flex", gap: 8 }}>
+          <button onClick={guardar} className="btn-amber" style={{ padding: "7px 14px", fontSize: 12.5 }}>Guardar</button>
+          <button onClick={() => setEditando(false)} className="btn-outline" style={{ padding: "7px 14px", fontSize: 12.5 }}>Cancelar</button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: "#fff", border: "1px solid #E2E5E3", borderRadius: 10, padding: "10px 14px", gap: 10, flexWrap: "wrap" }}>
+      <div style={{ fontSize: 13.5 }}>
+        <strong>{v.empresa}</strong> — {v.oficio} — {v.ciudad}{" "}
+        <span style={{ color: vencido ? "#C1432B" : "#5B655F" }}>
+          ({vencido ? "vencido" : `${dias} días restantes`})
+        </span>
+      </div>
+      <div style={{ display: "flex", gap: 8 }}>
+        <button onClick={() => setEditando(true)} className="btn-outline" style={{ padding: "6px 12px", fontSize: 12.5 }}>Editar</button>
+        <button onClick={() => { if (window.confirm(`¿Borrar la vacante de ${v.empresa}?`)) onBorrar(v.id); }} className="btn-outline" style={{ padding: "6px 12px", fontSize: 12.5, borderColor: "#C1432B", color: "#C1432B" }}>
+          Borrar
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function ConfiguracionAdmin({ config, onGuardar }) {
+  const [pagosActivos, setPagosActivos] = useState(config.pagos_activos);
+  const [precioBusca, setPrecioBusca] = useState(config.precio_busca_trabajo);
+  const [precioOfrece, setPrecioOfrece] = useState(config.precio_ofrece_trabajo);
+  const [whatsapp, setWhatsapp] = useState(config.whatsapp_contacto);
+
+  function guardar() {
+    onGuardar({
+      pagos_activos: pagosActivos,
+      precio_busca_trabajo: Number(precioBusca),
+      precio_ofrece_trabajo: Number(precioOfrece),
+      whatsapp_contacto: whatsapp,
+    });
+  }
+
+  return (
+    <div style={{ background: "#fff", border: "1px solid #E2E5E3", borderRadius: 12, padding: 18, marginBottom: 28 }}>
+      <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 14, fontWeight: 600, marginBottom: 16, cursor: "pointer" }}>
+        <input type="checkbox" checked={pagosActivos} onChange={(e) => setPagosActivos(e.target.checked)} />
+        Cobro activado (si está desmarcado, todo sigue gratis y solo se muestra el precio como aviso)
+      </label>
+      <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 14 }}>
+        <div style={{ flex: 1, minWidth: 160 }}>
+          <label style={labelStyle}>Tarifa: busca trabajo (USD)</label>
+          <input type="number" step="0.5" min="0" style={inputStyle} value={precioBusca} onChange={(e) => setPrecioBusca(e.target.value)} />
+        </div>
+        <div style={{ flex: 1, minWidth: 160 }}>
+          <label style={labelStyle}>Tarifa: ofrece trabajo (USD)</label>
+          <input type="number" step="0.5" min="0" style={inputStyle} value={precioOfrece} onChange={(e) => setPrecioOfrece(e.target.value)} />
+        </div>
+      </div>
+      <div style={{ marginBottom: 16 }}>
+        <label style={labelStyle}>WhatsApp de contacto (con código de país, ej: 584128412750)</label>
+        <input style={inputStyle} value={whatsapp} onChange={(e) => setWhatsapp(e.target.value)} />
+      </div>
+      <button onClick={guardar} className="btn-steel">Guardar configuración</button>
+    </div>
+  );
+}
+
+function AdminPanel({ perfiles, vacantes, onBorrarPerfil, onBorrarVacante, onEditarPerfil, onEditarVacante, config, onGuardarConfig, onCerrar }) {
   return (
     <div style={{ marginTop: 40, borderTop: "3px solid #1C2321", paddingTop: 24 }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 18 }}>
@@ -862,79 +1062,62 @@ function AdminPanel({ perfiles, vacantes, onBorrarPerfil, onBorrarVacante, onCer
         <button onClick={onCerrar} className="btn-outline" style={{ padding: "6px 12px", fontSize: 13 }}>Cerrar panel</button>
       </div>
 
+      <h3 style={{ fontSize: 15, fontWeight: 700, margin: "0 0 10px" }}>Configuración de tarifas y contacto</h3>
+      <ConfiguracionAdmin config={config} onGuardar={onGuardarConfig} />
+
       <h3 style={{ fontSize: 15, fontWeight: 700, margin: "0 0 10px" }}>Perfiles ({perfiles.length})</h3>
       <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 28 }}>
-        {perfiles.map((p) => {
-          const dias = diasRestantes(p.fecha);
-          const vencido = dias <= 0;
-          return (
-            <div key={p.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: "#fff", border: "1px solid #E2E5E3", borderRadius: 10, padding: "10px 14px" }}>
-              <div style={{ fontSize: 13.5 }}>
-                <strong>{p.nombre}</strong> — {p.oficio} — {p.ciudad}{" "}
-                <span style={{ color: vencido ? "#C1432B" : "#5B655F" }}>
-                  ({vencido ? "vencido" : `${dias} días restantes`})
-                </span>
-              </div>
-              <button onClick={() => { if (window.confirm(`¿Borrar el perfil de ${p.nombre}?`)) onBorrarPerfil(p.id); }} className="btn-outline" style={{ padding: "6px 12px", fontSize: 12.5, borderColor: "#C1432B", color: "#C1432B" }}>
-                Borrar
-              </button>
-            </div>
-          );
-        })}
+        {perfiles.map((p) => (
+          <FilaAdminPerfil key={p.id} p={p} onBorrar={onBorrarPerfil} onEditar={onEditarPerfil} />
+        ))}
         {perfiles.length === 0 && <p style={{ fontSize: 13.5, color: "#8A928C" }}>No hay perfiles registrados.</p>}
       </div>
 
       <h3 style={{ fontSize: 15, fontWeight: 700, margin: "0 0 10px" }}>Vacantes ({vacantes.length})</h3>
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        {vacantes.map((v) => {
-          const dias = diasRestantes(v.fecha);
-          const vencido = dias <= 0;
-          return (
-            <div key={v.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: "#fff", border: "1px solid #E2E5E3", borderRadius: 10, padding: "10px 14px" }}>
-              <div style={{ fontSize: 13.5 }}>
-                <strong>{v.empresa}</strong> — {v.oficio} — {v.ciudad}{" "}
-                <span style={{ color: vencido ? "#C1432B" : "#5B655F" }}>
-                  ({vencido ? "vencido" : `${dias} días restantes`})
-                </span>
-              </div>
-              <button onClick={() => { if (window.confirm(`¿Borrar la vacante de ${v.empresa}?`)) onBorrarVacante(v.id); }} className="btn-outline" style={{ padding: "6px 12px", fontSize: 12.5, borderColor: "#C1432B", color: "#C1432B" }}>
-                Borrar
-              </button>
-            </div>
-          );
-        })}
+        {vacantes.map((v) => (
+          <FilaAdminVacante key={v.id} v={v} onBorrar={onBorrarVacante} onEditar={onEditarVacante} />
+        ))}
         {vacantes.length === 0 && <p style={{ fontSize: 13.5, color: "#8A928C" }}>No hay vacantes publicadas.</p>}
       </div>
     </div>
   );
 }
 
-function SeccionPrecios() {
+function SeccionPrecios({ config }) {
   return (
     <section style={{ background: "#F1F2F0", padding: "44px 20px" }}>
       <div style={{ maxWidth: 900, margin: "0 auto", textAlign: "center" }}>
         <div style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "#FFF4DE", border: "1px solid #F2A71B", borderRadius: 20, padding: "5px 14px", marginBottom: 14 }}>
           <Sparkles size={13} color="#C97F0B" />
           <span className="mono" style={{ fontSize: 11.5, color: "#C97F0B", fontWeight: 700 }}>
-            {PAGOS_ACTIVOS ? "PLANES ACTIVOS" : "PRÓXIMAMENTE — POR AHORA TODO ES GRATIS"}
+            {config.pagos_activos ? "PLANES ACTIVOS" : "PRÓXIMAMENTE — POR AHORA TODO ES GRATIS"}
           </span>
         </div>
         <h2 className="oswald" style={{ fontSize: 24, fontWeight: 700, margin: "0 0 10px" }}>Precios de acceso a la búsqueda</h2>
-        <p style={{ color: "#5B655F", fontSize: 14, maxWidth: 560, margin: "0 auto 28px" }}>
+        <p style={{ color: "#5B655F", fontSize: 14, maxWidth: 560, margin: "0 auto 20px" }}>
           Hoy puedes registrarte y buscar totalmente gratis. Cuando se active el cobro, esto es lo que costará acceder a la búsqueda:
         </p>
-        <div style={{ display: "flex", gap: 20, justifyContent: "center", flexWrap: "wrap" }}>
+        <div style={{ display: "flex", gap: 20, justifyContent: "center", flexWrap: "wrap", marginBottom: 24 }}>
           <div style={{ background: "#fff", border: "1px solid #E2E5E3", borderRadius: 14, padding: 26, width: 240 }}>
-            <div className="oswald" style={{ fontSize: 34, fontWeight: 700, color: "#F2A71B" }}>${PRECIO_BUSCA_TRABAJO}</div>
+            <div className="oswald" style={{ fontSize: 34, fontWeight: 700, color: "#F2A71B" }}>${config.precio_busca_trabajo}</div>
             <div style={{ fontSize: 13, color: "#5B655F", marginBottom: 12 }}>por acceso, profesionales y obreros</div>
             <p style={{ fontSize: 12.5, color: "#3F4642", margin: 0 }}>Para quienes buscan trabajo: acceder a las vacantes publicadas.</p>
           </div>
           <div style={{ background: "#fff", border: "1px solid #E2E5E3", borderRadius: 14, padding: 26, width: 240 }}>
-            <div className="oswald" style={{ fontSize: 34, fontWeight: 700, color: "#33495E" }}>${PRECIO_OFRECE_TRABAJO}</div>
+            <div className="oswald" style={{ fontSize: 34, fontWeight: 700, color: "#33495E" }}>${config.precio_ofrece_trabajo}</div>
             <div style={{ fontSize: 13, color: "#5B655F", marginBottom: 12 }}>por acceso, empleadores</div>
             <p style={{ fontSize: 12.5, color: "#3F4642", margin: 0 }}>Para quienes ofrecen trabajo: acceder al directorio de profesionales.</p>
           </div>
         </div>
+        <a
+          href={`https://wa.me/${(config.whatsapp_contacto || "").replace(/\D/g, "")}?text=${encodeURIComponent("Hola, tengo una consulta sobre OficioVE.")}`}
+          target="_blank" rel="noopener noreferrer"
+          className="btn-steel"
+          style={{ textDecoration: "none", display: "inline-flex" }}
+        >
+          <Phone size={16} /> ¿Dudas? Escríbenos por WhatsApp
+        </a>
       </div>
     </section>
   );
