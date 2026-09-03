@@ -41,6 +41,7 @@ const OFICIOS = [
   { nombre: "Operador de maquinaria agrícola", categoria: "Agro" },
   { nombre: "Obrero agrícola", categoria: "Agro" },
   { nombre: "Chofer / transporte de carga", categoria: "Logística" },
+  { nombre: "Otro (especificar)", categoria: "Industria" },
 ];
 
 const CATEGORIA_COLOR = {
@@ -71,6 +72,16 @@ function estaVencido(fechaMs) {
 
 function credencial(id) {
   return "VE-" + id.slice(-6).toUpperCase();
+}
+
+async function subirArchivo(archivo, prefijo) {
+  if (!archivo) return null;
+  const extension = archivo.name.split(".").pop();
+  const ruta = `${prefijo}-${Date.now()}.${extension}`;
+  const { error } = await supabase.storage.from("documentos").upload(ruta, archivo);
+  if (error) return null;
+  const { data } = supabase.storage.from("documentos").getPublicUrl(ruta);
+  return data.publicUrl;
 }
 
 function waLink(telefono, texto) {
@@ -638,9 +649,13 @@ function PerfilCard({ p, bloqueado, onRequierePago }) {
       <div style={{ height: 8, background: color }} />
       <div className="badge-notch" style={{ position: "relative", padding: "22px 18px 18px" }}>
         <div style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 14 }}>
-          <div style={{ width: 46, height: 46, borderRadius: "50%", background: color, color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 15, flexShrink: 0 }} className="oswald">
-            {iniciales}
-          </div>
+          {p.foto_url ? (
+            <img src={p.foto_url} alt={p.nombre} style={{ width: 46, height: 46, borderRadius: "50%", objectFit: "cover", flexShrink: 0, border: `2px solid ${color}` }} />
+          ) : (
+            <div style={{ width: 46, height: 46, borderRadius: "50%", background: color, color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 15, flexShrink: 0 }} className="oswald">
+              {iniciales}
+            </div>
+          )}
           <div style={{ minWidth: 0, flex: 1 }}>
             <div style={{ fontWeight: 700, fontSize: 15.5, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{p.nombre}</div>
             <div style={{ color, fontSize: 17, fontWeight: 700 }}>{p.oficio}</div>
@@ -666,12 +681,12 @@ function PerfilCard({ p, bloqueado, onRequierePago }) {
         {p.descripcion && <p style={{ fontSize: 13.5, color: "#3F4642", lineHeight: 1.45, margin: "0 0 14px" }}>{p.descripcion}</p>}
         {p.documento_url && (
           bloqueado ? (
-            <button onClick={onRequierePago} style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 12.5, color: "#8A928C", fontWeight: 600, marginBottom: 12, background: "none", border: "none", cursor: "pointer" }}>
-              <Lock size={13} /> Currículo / tarjeta (de pago)
+            <button onClick={onRequierePago} className="btn-outline" style={{ padding: "7px 14px", fontSize: 12.5, marginBottom: 12, width: "100%", justifyContent: "center", color: "#8A928C", borderColor: "#C9CFCE" }}>
+              <Lock size={13} /> Ver currículum (de pago)
             </button>
           ) : (
-            <a href={p.documento_url} target="_blank" rel="noopener noreferrer" style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 12.5, color: "#33495E", fontWeight: 600, marginBottom: 12, textDecoration: "underline" }}>
-              <FileText size={13} /> Ver currículo / tarjeta
+            <a href={p.documento_url} target="_blank" rel="noopener noreferrer" className="btn-outline" style={{ padding: "7px 14px", fontSize: 12.5, marginBottom: 12, width: "100%", justifyContent: "center", textDecoration: "none" }}>
+              <FileText size={13} /> Ver currículum
             </a>
           )
         )}
@@ -761,17 +776,20 @@ function PerfilForm({ onClose, onSubmit }) {
   const [telefono, setTelefono] = useState("");
   const [ciudad, setCiudad] = useState(CIUDADES[0]);
   const [oficio, setOficio] = useState(OFICIOS[0].nombre);
+  const [oficioPersonalizado, setOficioPersonalizado] = useState("");
   const [experiencia, setExperiencia] = useState("");
   const [descripcion, setDescripcion] = useState("");
   const [aceptaTerminos, setAceptaTerminos] = useState(false);
   const [archivo, setArchivo] = useState(null);
+  const [foto, setFoto] = useState(null);
   const [subiendo, setSubiendo] = useState(false);
   const [err, setErr] = useState("");
 
   async function submit(e) {
     e.preventDefault();
-    if (!nombre.trim() || !telefono.trim() || !experiencia) {
-      setErr("Completa nombre, WhatsApp y años de experiencia.");
+    const oficioFinal = oficio === "Otro (especificar)" ? oficioPersonalizado.trim() : oficio;
+    if (!nombre.trim() || !telefono.trim() || !experiencia || !oficioFinal) {
+      setErr("Completa nombre, WhatsApp, oficio y años de experiencia.");
       return;
     }
     if (!aceptaTerminos) {
@@ -780,26 +798,16 @@ function PerfilForm({ onClose, onSubmit }) {
     }
     const categoria = OFICIOS.find((o) => o.nombre === oficio)?.categoria || "Industria";
     const id = genId();
-    let documento_url = null;
 
-    if (archivo) {
-      setSubiendo(true);
-      const extension = archivo.name.split(".").pop();
-      const ruta = `${id}.${extension}`;
-      const { error: errorSubida } = await supabase.storage.from("documentos").upload(ruta, archivo);
-      setSubiendo(false);
-      if (errorSubida) {
-        setErr("No se pudo subir el archivo. Puedes publicar sin él e intentar más tarde.");
-      } else {
-        const { data } = supabase.storage.from("documentos").getPublicUrl(ruta);
-        documento_url = data.publicUrl;
-      }
-    }
+    setSubiendo(true);
+    const documento_url = await subirArchivo(archivo, `doc-${id}`);
+    const foto_url = await subirArchivo(foto, `foto-${id}`);
+    setSubiendo(false);
 
     onSubmit({
-      id, nombre: nombre.trim(), telefono: telefono.trim(), ciudad, oficio, categoria,
+      id, nombre: nombre.trim(), telefono: telefono.trim(), ciudad, oficio: oficioFinal, categoria,
       experiencia: Number(experiencia), descripcion: descripcion.trim(), fecha: Date.now(), verificado: false,
-      documento_url,
+      documento_url, foto_url,
     });
   }
 
@@ -831,10 +839,17 @@ function PerfilForm({ onClose, onSubmit }) {
           <select style={inputStyle} value={oficio} onChange={(e) => setOficio(e.target.value)}>
             {OFICIOS.map((o) => <option key={o.nombre}>{o.nombre}</option>)}
           </select>
+          {oficio === "Otro (especificar)" && (
+            <input style={{ ...inputStyle, marginTop: 8 }} value={oficioPersonalizado} onChange={(e) => setOficioPersonalizado(e.target.value)} placeholder="Escribe tu oficio" />
+          )}
         </div>
         <div>
           <label style={labelStyle}>Breve descripción (opcional)</label>
           <textarea style={{ ...inputStyle, minHeight: 70, resize: "vertical" }} value={descripcion} onChange={(e) => setDescripcion(e.target.value)} placeholder="Certificaciones, tipo de proyectos, disponibilidad..." />
+        </div>
+        <div>
+          <label style={labelStyle}>Foto de perfil (opcional)</label>
+          <input type="file" accept=".jpg,.jpeg,.png" style={inputStyle} onChange={(e) => setFoto(e.target.files[0] || null)} />
         </div>
         <div>
           <label style={labelStyle}>Currículo o tarjeta de presentación (opcional)</label>
@@ -847,7 +862,7 @@ function PerfilForm({ onClose, onSubmit }) {
         </label>
         {err && <p style={{ color: "#C1432B", fontSize: 13, margin: 0 }}>{err}</p>}
         <button type="submit" disabled={subiendo} className="btn-amber" style={{ justifyContent: "center", marginTop: 4 }}>
-          {subiendo ? "Subiendo archivo..." : "Publicar mi perfil"}
+          {subiendo ? "Subiendo archivos..." : "Publicar mi perfil"}
         </button>
       </form>
     </ModalShell>
@@ -960,11 +975,26 @@ function FilaAdminPerfil({ p, onBorrar, onEditar }) {
   const [telefono, setTelefono] = useState(p.telefono);
   const [experiencia, setExperiencia] = useState(p.experiencia);
   const [descripcion, setDescripcion] = useState(p.descripcion || "");
+  const [verificado, setVerificado] = useState(!!p.verificado);
+  const [nuevoArchivo, setNuevoArchivo] = useState(null);
+  const [nuevaFoto, setNuevaFoto] = useState(null);
+  const [guardando, setGuardando] = useState(false);
   const dias = diasRestantes(p.fecha);
   const vencido = dias <= 0;
 
-  function guardar() {
-    onEditar(p.id, { nombre, oficio, ciudad, telefono, experiencia: Number(experiencia), descripcion });
+  async function guardar() {
+    setGuardando(true);
+    const cambios = { nombre, oficio, ciudad, telefono, experiencia: Number(experiencia), descripcion, verificado };
+    if (nuevoArchivo) {
+      const url = await subirArchivo(nuevoArchivo, `doc-${p.id}`);
+      if (url) cambios.documento_url = url;
+    }
+    if (nuevaFoto) {
+      const url = await subirArchivo(nuevaFoto, `foto-${p.id}`);
+      if (url) cambios.foto_url = url;
+    }
+    setGuardando(false);
+    onEditar(p.id, cambios);
     setEditando(false);
   }
 
@@ -973,9 +1003,7 @@ function FilaAdminPerfil({ p, onBorrar, onEditar }) {
       <div style={{ background: "#fff", border: "1.5px solid #33495E", borderRadius: 10, padding: 14, display: "flex", flexDirection: "column", gap: 8 }}>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           <input style={{ ...inputStyle, flex: 1, minWidth: 140 }} value={nombre} onChange={(e) => setNombre(e.target.value)} placeholder="Nombre" />
-          <select style={{ ...inputStyle, flex: 1, minWidth: 140 }} value={oficio} onChange={(e) => setOficio(e.target.value)}>
-            {OFICIOS.map((o) => <option key={o.nombre}>{o.nombre}</option>)}
-          </select>
+          <input style={{ ...inputStyle, flex: 1, minWidth: 140 }} value={oficio} onChange={(e) => setOficio(e.target.value)} placeholder="Oficio (escribe libremente)" />
         </div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           <select style={{ ...inputStyle, flex: 1, minWidth: 140 }} value={ciudad} onChange={(e) => setCiudad(e.target.value)}>
@@ -985,8 +1013,25 @@ function FilaAdminPerfil({ p, onBorrar, onEditar }) {
           <input type="number" style={{ ...inputStyle, width: 90 }} value={experiencia} onChange={(e) => setExperiencia(e.target.value)} placeholder="Años" />
         </div>
         <textarea style={{ ...inputStyle, minHeight: 50 }} value={descripcion} onChange={(e) => setDescripcion(e.target.value)} placeholder="Descripción" />
+        <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12.5, cursor: "pointer" }}>
+          <input type="checkbox" checked={verificado} onChange={(e) => setVerificado(e.target.checked)} /> Marcar como verificado
+        </label>
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+          <div style={{ flex: 1, minWidth: 180 }}>
+            <label style={{ ...labelStyle, marginBottom: 4 }}>Cambiar/subir foto de perfil</label>
+            <input type="file" accept=".jpg,.jpeg,.png" style={inputStyle} onChange={(e) => setNuevaFoto(e.target.files[0] || null)} />
+            {p.foto_url && !nuevaFoto && <span style={{ fontSize: 11, color: "#5B655F" }}>Ya tiene foto — sube una para reemplazarla.</span>}
+          </div>
+          <div style={{ flex: 1, minWidth: 180 }}>
+            <label style={{ ...labelStyle, marginBottom: 4 }}>Cambiar/subir currículo</label>
+            <input type="file" accept=".pdf,.jpg,.jpeg,.png" style={inputStyle} onChange={(e) => setNuevoArchivo(e.target.files[0] || null)} />
+            {p.documento_url && !nuevoArchivo && <span style={{ fontSize: 11, color: "#5B655F" }}>Ya tiene archivo — sube uno para reemplazarlo.</span>}
+          </div>
+        </div>
         <div style={{ display: "flex", gap: 8 }}>
-          <button onClick={guardar} className="btn-amber" style={{ padding: "7px 14px", fontSize: 12.5 }}>Guardar</button>
+          <button onClick={guardar} disabled={guardando} className="btn-amber" style={{ padding: "7px 14px", fontSize: 12.5 }}>
+            {guardando ? "Guardando..." : "Guardar"}
+          </button>
           <button onClick={() => setEditando(false)} className="btn-outline" style={{ padding: "7px 14px", fontSize: 12.5 }}>Cancelar</button>
         </div>
       </div>
@@ -1031,9 +1076,7 @@ function FilaAdminVacante({ v, onBorrar, onEditar }) {
       <div style={{ background: "#fff", border: "1.5px solid #33495E", borderRadius: 10, padding: 14, display: "flex", flexDirection: "column", gap: 8 }}>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           <input style={{ ...inputStyle, flex: 1, minWidth: 140 }} value={empresa} onChange={(e) => setEmpresa(e.target.value)} placeholder="Empresa" />
-          <select style={{ ...inputStyle, flex: 1, minWidth: 140 }} value={oficio} onChange={(e) => setOficio(e.target.value)}>
-            {OFICIOS.map((o) => <option key={o.nombre}>{o.nombre}</option>)}
-          </select>
+          <input style={{ ...inputStyle, flex: 1, minWidth: 140 }} value={oficio} onChange={(e) => setOficio(e.target.value)} placeholder="Oficio (escribe libremente)" />
         </div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           <select style={{ ...inputStyle, flex: 1, minWidth: 140 }} value={ciudad} onChange={(e) => setCiudad(e.target.value)}>
