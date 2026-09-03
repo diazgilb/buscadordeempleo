@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from "react";
 import {
   Search, MapPin, Phone, Briefcase, UserPlus, Building2, X,
   Wrench, Hammer, ChevronDown, Clock, Users, Zap, CheckCircle2, Menu,
-  ShieldCheck, Eye, AlertTriangle, FileText, Sparkles
+  ShieldCheck, Eye, AlertTriangle, FileText, Sparkles, Lock, PlusCircle, Trash2
 } from "lucide-react";
 import { supabase } from "./supabaseClient";
 
@@ -123,6 +123,15 @@ export default function App() {
     precio_ofrece_trabajo: 5,
     whatsapp_contacto: "584128412750",
   });
+
+  const [accesoDesbloqueado, setAccesoDesbloqueado] = useState(false);
+  const [showDesbloqueoModal, setShowDesbloqueoModal] = useState(false);
+
+  useEffect(() => {
+    try {
+      if (localStorage.getItem("oficiove-acceso") === "si") setAccesoDesbloqueado(true);
+    } catch (e) {}
+  }, []);
 
   async function cargarConfig() {
     const { data, error } = await supabase.from("configuracion").select("*").eq("id", 1).single();
@@ -431,7 +440,14 @@ export default function App() {
               />
             ) : (
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(270px, 1fr))", gap: 20 }}>
-                {perfilesFiltrados.map((p) => <PerfilCard key={p.id} p={p} />)}
+                {perfilesFiltrados.map((p) => (
+                  <PerfilCard
+                    key={p.id}
+                    p={p}
+                    bloqueado={config.pagos_activos && !accesoDesbloqueado}
+                    onRequierePago={() => setShowDesbloqueoModal(true)}
+                  />
+                ))}
               </div>
             )}
           </>
@@ -451,7 +467,14 @@ export default function App() {
               />
             ) : (
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 20 }}>
-                {vacantesFiltradas.map((v) => <VacanteCard key={v.id} v={v} />)}
+                {vacantesFiltradas.map((v) => (
+                  <VacanteCard
+                    key={v.id}
+                    v={v}
+                    bloqueado={config.pagos_activos && !accesoDesbloqueado}
+                    onRequierePago={() => setShowDesbloqueoModal(true)}
+                  />
+                ))}
               </div>
             )}
           </>
@@ -489,6 +512,19 @@ export default function App() {
         <AdminLogin
           onClose={() => setShowAdminLogin(false)}
           onSuccess={() => { setAdminAuthed(true); setShowAdminLogin(false); }}
+        />
+      )}
+
+      {showDesbloqueoModal && (
+        <DesbloqueoModal
+          config={config}
+          onClose={() => setShowDesbloqueoModal(false)}
+          onDesbloqueado={() => {
+            setAccesoDesbloqueado(true);
+            try { localStorage.setItem("oficiove-acceso", "si"); } catch (e) {}
+            setShowDesbloqueoModal(false);
+            showToast("¡Acceso desbloqueado! Ya puedes ver los contactos.");
+          }}
         />
       )}
 
@@ -587,10 +623,16 @@ function EmptyState({ icon, titulo, texto, accion, accionTexto }) {
   );
 }
 
-function PerfilCard({ p }) {
+function PerfilCard({ p, bloqueado, onRequierePago }) {
   const [revelado, setRevelado] = useState(false);
   const color = CATEGORIA_COLOR[p.categoria] || "#33495E";
   const iniciales = p.nombre.split(" ").slice(0, 2).map((w) => w[0]).join("").toUpperCase();
+
+  function clicVerContacto() {
+    if (bloqueado) onRequierePago();
+    else setRevelado(true);
+  }
+
   return (
     <div className="card-lift" style={{ background: "#fff", borderRadius: 14, overflow: "hidden", border: "1px solid #E2E5E3", position: "relative" }}>
       <div style={{ height: 8, background: color }} />
@@ -623,19 +665,25 @@ function PerfilCard({ p }) {
         </div>
         {p.descripcion && <p style={{ fontSize: 13.5, color: "#3F4642", lineHeight: 1.45, margin: "0 0 14px" }}>{p.descripcion}</p>}
         {p.documento_url && (
-          <a href={p.documento_url} target="_blank" rel="noopener noreferrer" style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 12.5, color: "#33495E", fontWeight: 600, marginBottom: 12, textDecoration: "underline" }}>
-            <FileText size={13} /> Ver currículo / tarjeta
-          </a>
+          bloqueado ? (
+            <button onClick={onRequierePago} style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 12.5, color: "#8A928C", fontWeight: 600, marginBottom: 12, background: "none", border: "none", cursor: "pointer" }}>
+              <Lock size={13} /> Currículo / tarjeta (de pago)
+            </button>
+          ) : (
+            <a href={p.documento_url} target="_blank" rel="noopener noreferrer" style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 12.5, color: "#33495E", fontWeight: 600, marginBottom: 12, textDecoration: "underline" }}>
+              <FileText size={13} /> Ver currículo / tarjeta
+            </a>
+          )
         )}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", borderTop: "1px dashed #E2E5E3", paddingTop: 12 }}>
           <span className="mono" style={{ fontSize: 11, color: "#8A928C" }}>{credencial(p.id)}</span>
-          {revelado ? (
+          {revelado && !bloqueado ? (
             <a href={waLink(p.telefono, `Hola ${p.nombre.split(" ")[0]}, vi tu perfil como ${p.oficio} en OficioVE y quisiera contactarte.`)} target="_blank" rel="noopener noreferrer" className="btn-amber" style={{ padding: "8px 14px", fontSize: 13, textDecoration: "none" }}>
               <Phone size={14} /> WhatsApp
             </a>
           ) : (
-            <button onClick={() => setRevelado(true)} className="btn-outline" style={{ padding: "8px 14px", fontSize: 13, display: "inline-flex", alignItems: "center", gap: 6 }}>
-              <Eye size={14} /> Ver contacto
+            <button onClick={clicVerContacto} className="btn-outline" style={{ padding: "8px 14px", fontSize: 13, display: "inline-flex", alignItems: "center", gap: 6 }}>
+              {bloqueado ? <Lock size={14} /> : <Eye size={14} />} {bloqueado ? "Desbloquear contacto" : "Ver contacto"}
             </button>
           )}
         </div>
@@ -644,9 +692,15 @@ function PerfilCard({ p }) {
   );
 }
 
-function VacanteCard({ v }) {
+function VacanteCard({ v, bloqueado, onRequierePago }) {
   const [revelado, setRevelado] = useState(false);
   const color = CATEGORIA_COLOR[v.categoria] || "#33495E";
+
+  function clicVerContacto() {
+    if (bloqueado) onRequierePago();
+    else setRevelado(true);
+  }
+
   return (
     <div className="card-lift" style={{ background: "#fff", borderRadius: 14, border: "1px solid #E2E5E3", padding: 18, position: "relative" }}>
       {v.urgente && (
@@ -673,13 +727,13 @@ function VacanteCard({ v }) {
         </span>
       </div>
       {v.descripcion && <p style={{ fontSize: 13.5, color: "#3F4642", lineHeight: 1.45, margin: "0 0 14px" }}>{v.descripcion}</p>}
-      {revelado ? (
+      {revelado && !bloqueado ? (
         <a href={waLink(v.telefono, `Hola, vi la vacante de ${v.oficio} en ${v.empresa} publicada en OficioVE. Me interesa postularme.`)} target="_blank" rel="noopener noreferrer" className="btn-steel" style={{ padding: "9px 14px", fontSize: 13, textDecoration: "none", width: "100%", justifyContent: "center" }}>
           <Phone size={14} /> Postularme por WhatsApp
         </a>
       ) : (
-        <button onClick={() => setRevelado(true)} className="btn-outline" style={{ padding: "9px 14px", fontSize: 13, width: "100%", justifyContent: "center" }}>
-          <Eye size={14} /> Ver contacto
+        <button onClick={clicVerContacto} className="btn-outline" style={{ padding: "9px 14px", fontSize: 13, width: "100%", justifyContent: "center" }}>
+          {bloqueado ? <Lock size={14} /> : <Eye size={14} />} {bloqueado ? "Desbloquear contacto" : "Ver contacto"}
         </button>
       )}
     </div>
@@ -1065,6 +1119,9 @@ function AdminPanel({ perfiles, vacantes, onBorrarPerfil, onBorrarVacante, onEdi
       <h3 style={{ fontSize: 15, fontWeight: 700, margin: "0 0 10px" }}>Configuración de tarifas y contacto</h3>
       <ConfiguracionAdmin config={config} onGuardar={onGuardarConfig} />
 
+      <CuentasPagoAdmin />
+      <CodigosAccesoAdmin />
+
       <h3 style={{ fontSize: 15, fontWeight: 700, margin: "0 0 10px" }}>Perfiles ({perfiles.length})</h3>
       <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 28 }}>
         {perfiles.map((p) => (
@@ -1120,5 +1177,193 @@ function SeccionPrecios({ config }) {
         </a>
       </div>
     </section>
+  );
+}
+
+function DesbloqueoModal({ config, onClose, onDesbloqueado }) {
+  const [cuentas, setCuentas] = useState([]);
+  const [cargandoCuentas, setCargandoCuentas] = useState(true);
+  const [codigo, setCodigo] = useState("");
+  const [err, setErr] = useState("");
+  const [validando, setValidando] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      const { data } = await supabase.from("cuentas_pago").select("*").eq("activo", true);
+      setCuentas(data || []);
+      setCargandoCuentas(false);
+    })();
+  }, []);
+
+  async function validarCodigo(e) {
+    e.preventDefault();
+    setErr("");
+    if (!codigo.trim()) {
+      setErr("Escribe el código que te dieron.");
+      return;
+    }
+    setValidando(true);
+    const { data, error } = await supabase.from("codigos_acceso").select("*").eq("codigo", codigo.trim().toUpperCase()).eq("usado", false).maybeSingle();
+    if (error || !data) {
+      setValidando(false);
+      setErr("Código incorrecto o ya usado. Verifica con quien te lo dio.");
+      return;
+    }
+    await supabase.from("codigos_acceso").update({ usado: true }).eq("id", data.id);
+    setValidando(false);
+    onDesbloqueado();
+  }
+
+  return (
+    <ModalShell title="Desbloquear contactos" onClose={onClose}>
+      <p style={{ fontSize: 13.5, color: "#5B655F", marginTop: -6, marginBottom: 16, lineHeight: 1.5 }}>
+        Para ver los números de WhatsApp y currículos, primero realiza el pago a una de estas cuentas y luego escríbenos por WhatsApp para que te demos tu código de acceso.
+      </p>
+
+      {cargandoCuentas ? (
+        <p style={{ fontSize: 13, color: "#8A928C" }}>Cargando cuentas de pago...</p>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 16 }}>
+          {cuentas.map((c) => (
+            <div key={c.id} style={{ background: "#F7F8F7", borderRadius: 8, padding: "10px 12px" }}>
+              <div style={{ fontWeight: 700, fontSize: 13 }}>{c.metodo}</div>
+              <div style={{ fontSize: 12.5, color: "#3F4642" }}>{c.datos}</div>
+            </div>
+          ))}
+          {cuentas.length === 0 && <p style={{ fontSize: 13, color: "#8A928C" }}>Todavía no hay cuentas de pago cargadas. Escríbenos por WhatsApp para coordinar.</p>}
+        </div>
+      )}
+
+      <a
+        href={`https://wa.me/${(config.whatsapp_contacto || "").replace(/\D/g, "")}?text=${encodeURIComponent("Hola, ya realicé el pago en OficioVE y quisiera mi código de acceso.")}`}
+        target="_blank" rel="noopener noreferrer"
+        className="btn-steel"
+        style={{ textDecoration: "none", width: "100%", justifyContent: "center", marginBottom: 20 }}
+      >
+        <Phone size={15} /> Ya pagué, pedir mi código por WhatsApp
+      </a>
+
+      <div style={{ borderTop: "1px dashed #E2E5E3", paddingTop: 16 }}>
+        <form onSubmit={validarCodigo} style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          <label style={labelStyle}>¿Ya tienes tu código de acceso?</label>
+          <input style={inputStyle} value={codigo} onChange={(e) => setCodigo(e.target.value)} placeholder="Escribe tu código aquí" />
+          {err && <p style={{ color: "#C1432B", fontSize: 12.5, margin: 0 }}>{err}</p>}
+          <button type="submit" disabled={validando} className="btn-amber" style={{ justifyContent: "center" }}>
+            {validando ? "Validando..." : "Desbloquear con mi código"}
+          </button>
+        </form>
+      </div>
+    </ModalShell>
+  );
+}
+
+function CuentasPagoAdmin() {
+  const [cuentas, setCuentas] = useState([]);
+  const [metodo, setMetodo] = useState("");
+  const [datos, setDatos] = useState("");
+
+  async function cargar() {
+    const { data } = await supabase.from("cuentas_pago").select("*").order("metodo");
+    setCuentas(data || []);
+  }
+
+  useEffect(() => { cargar(); }, []);
+
+  async function agregar() {
+    if (!metodo.trim() || !datos.trim()) return;
+    await supabase.from("cuentas_pago").insert({ metodo: metodo.trim(), datos: datos.trim(), activo: true });
+    setMetodo("");
+    setDatos("");
+    cargar();
+  }
+
+  async function toggleActivo(c) {
+    await supabase.from("cuentas_pago").update({ activo: !c.activo }).eq("id", c.id);
+    cargar();
+  }
+
+  async function borrar(id) {
+    if (!window.confirm("¿Borrar esta cuenta de pago?")) return;
+    await supabase.from("cuentas_pago").delete().eq("id", id);
+    cargar();
+  }
+
+  return (
+    <div style={{ background: "#fff", border: "1px solid #E2E5E3", borderRadius: 12, padding: 18, marginBottom: 28 }}>
+      <h4 style={{ fontSize: 14, fontWeight: 700, margin: "0 0 12px" }}>Cuentas de pago (Pago Móvil, Zelle, Binance, etc.)</h4>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 14 }}>
+        {cuentas.map((c) => (
+          <div key={c.id} style={{ display: "flex", alignItems: "center", gap: 10, background: "#F7F8F7", borderRadius: 8, padding: "8px 12px" }}>
+            <div style={{ flex: 1 }}>
+              <strong style={{ fontSize: 13 }}>{c.metodo}</strong> — <span style={{ fontSize: 12.5, color: "#5B655F" }}>{c.datos}</span>
+            </div>
+            <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11.5, color: "#5B655F" }}>
+              <input type="checkbox" checked={c.activo} onChange={() => toggleActivo(c)} /> Activa
+            </label>
+            <button onClick={() => borrar(c.id)} style={{ background: "none", border: "none", color: "#C1432B", cursor: "pointer" }}>
+              <Trash2 size={15} />
+            </button>
+          </div>
+        ))}
+        {cuentas.length === 0 && <p style={{ fontSize: 13, color: "#8A928C" }}>No hay cuentas cargadas todavía.</p>}
+      </div>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        <input style={{ ...inputStyle, flex: 1, minWidth: 140 }} value={metodo} onChange={(e) => setMetodo(e.target.value)} placeholder="Método (ej: Pago Móvil)" />
+        <input style={{ ...inputStyle, flex: 2, minWidth: 200 }} value={datos} onChange={(e) => setDatos(e.target.value)} placeholder="Datos (banco, teléfono, cédula, correo...)" />
+        <button onClick={agregar} className="btn-outline" style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+          <PlusCircle size={15} /> Agregar
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function CodigosAccesoAdmin() {
+  const [codigos, setCodigos] = useState([]);
+  const [generando, setGenerando] = useState(false);
+
+  async function cargar() {
+    const { data } = await supabase.from("codigos_acceso").select("*").order("fecha", { ascending: false }).limit(20);
+    setCodigos(data || []);
+  }
+
+  useEffect(() => { cargar(); }, []);
+
+  function generarCodigoTexto() {
+    const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+    let c = "";
+    for (let i = 0; i < 6; i++) c += chars[Math.floor(Math.random() * chars.length)];
+    return c;
+  }
+
+  async function generar() {
+    setGenerando(true);
+    const codigo = generarCodigoTexto();
+    await supabase.from("codigos_acceso").insert({ codigo, usado: false, fecha: Date.now() });
+    setGenerando(false);
+    cargar();
+  }
+
+  return (
+    <div style={{ background: "#fff", border: "1px solid #E2E5E3", borderRadius: 12, padding: 18, marginBottom: 28 }}>
+      <h4 style={{ fontSize: 14, fontWeight: 700, margin: "0 0 6px" }}>Códigos de acceso</h4>
+      <p style={{ fontSize: 12.5, color: "#5B655F", margin: "0 0 12px" }}>
+        Cuando alguien te confirme el pago, genera un código y envíaselo por WhatsApp. Es de un solo uso.
+      </p>
+      <button onClick={generar} disabled={generando} className="btn-amber" style={{ marginBottom: 14 }}>
+        {generando ? "Generando..." : "Generar nuevo código"}
+      </button>
+      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        {codigos.map((c) => (
+          <div key={c.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: "#F7F8F7", borderRadius: 8, padding: "6px 12px" }}>
+            <span className="mono" style={{ fontSize: 14, fontWeight: 700 }}>{c.codigo}</span>
+            <span style={{ fontSize: 11.5, color: c.usado ? "#8A928C" : "#3F8F5F", fontWeight: 600 }}>
+              {c.usado ? "Usado" : "Disponible"}
+            </span>
+          </div>
+        ))}
+        {codigos.length === 0 && <p style={{ fontSize: 13, color: "#8A928C" }}>Aún no has generado ningún código.</p>}
+      </div>
+    </div>
   );
 }
